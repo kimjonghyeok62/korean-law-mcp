@@ -1,17 +1,18 @@
-# Korean Law MCP Server
+# Korean Law MCP Server & CLI
 
-법제처 Open API 기반 한국 법령 MCP 서버. 58개 도구로 법령, 판례, 행정규칙, 자치법규, 법령해석례 등을 검색·조회·분석할 수 있다.
+법제처 Open API 기반 한국 법령 MCP 서버 + CLI. 58개 도구로 법령, 판례, 행정규칙, 자치법규, 법령해석례 등을 검색·조회·분석할 수 있다.
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-1.26-blue)](https://modelcontextprotocol.io)
+[![CLI](https://img.shields.io/badge/CLI-korean--law-green)](#cli-사용법)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue)](https://www.typescriptlang.org/)
 
 ## 주요 특징
 
+- **MCP + CLI 동시 지원**: MCP 서버(Claude Desktop 등)와 CLI(터미널/스크립트) 모두 사용 가능
 - **법률 도메인 특화**: 약칭 자동 인식(`화관법` → `화학물질관리법`), 조문번호 변환(`제38조` ↔ `003800`), 3단 위임 구조 시각화
 - **별표/별지서식 본문 추출**: HWPX·HWP 파일을 자동 다운로드 → 텍스트/표를 Markdown으로 변환. PDF는 링크 반환
 - **58개 도구**: 법령·판례·행정규칙·자치법규·헌재결정·행정심판·조세심판·관세해석·법령용어 등 포괄
-- **STDIO + SSE**: 로컬(Claude Desktop 등) 및 원격 배포 모두 지원
 - **캐시**: 검색 1시간, 조문 24시간 TTL
 
 ## 설치
@@ -69,6 +70,58 @@ npm install -g korean-law-mcp
 ```
 
 > API 키를 헤더로 전달하려면 `x-law-oc` 헤더를 사용한다.
+
+## CLI 사용법
+
+MCP 클라이언트 없이 터미널에서 직접 58개 도구를 실행할 수 있다.
+
+### CLI 실행
+
+```bash
+# 글로벌 설치 후
+npm install -g korean-law-mcp
+export LAW_OC=your-api-key
+
+# 법령 검색
+korean-law search_law --query "관세법"
+
+# 조문 조회
+korean-law get_law_text --mst 160001 --jo "제38조"
+
+# 판례 검색
+korean-law search_precedents --query "부당해고"
+
+# 도구 목록
+korean-law list
+
+# 카테고리별 필터
+korean-law list --category 판례
+
+# 도구 상세 도움말
+korean-law help search_law
+
+# JSON으로 파라미터 전달
+korean-law get_law_text --json-input '{"mst":"160001","jo":"제38조"}'
+```
+
+### npm run으로 실행 (로컬 개발)
+
+```bash
+npm run cli -- search_law --query "민법"
+npm run cli -- list
+```
+
+### 파이프 조합
+
+```bash
+# 검색 결과에서 MST만 추출
+korean-law search_law --query "관세법" | grep MST
+
+# 여러 법령 순차 조회
+for mst in 160001 160002; do
+  korean-law get_law_text --mst "$mst" --jo "제1조"
+done
+```
 
 ### Docker / 자체 배포
 
