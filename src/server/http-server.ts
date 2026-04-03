@@ -122,8 +122,10 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
   app.post("/mcp", async (req, res) => {
     console.error(`[POST /mcp] Received request`)
 
-    // Extract API key from various possible header locations
+    // Extract API key: URL query > header > 기존 세션
+    const apiKeyFromQuery = req.query.oc as string | undefined
     const apiKeyFromHeader =
+      apiKeyFromQuery ||
       req.headers["apikey"] ||
       req.headers["law_oc"] ||
       req.headers["law-oc"] ||

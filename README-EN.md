@@ -15,13 +15,23 @@
 
 ---
 
-## What's New in v2.3.0
+## What's New in v2.3.1
+
+- **URL Query API Key** — Pass your API key via `?oc=your-key` in the remote MCP URL. Automatically applies to the entire session — no need to pass the key with every tool call. Essential for web clients like Claude.ai where custom headers are hard to configure.
+- **Chain Auto Full-Text** — `chain_ordinance_compare` now auto-fetches the full text of the top result after search. No separate `get_ordinance` call needed.
+- **Lite Profile Routing Fix** — Rewrote chain/meta tool descriptions with INPUT-intent patterns and examples. Claude web now correctly picks `chain_ordinance_compare` for ordinance search/lookup queries.
+- **Tool Hint Unification** — All non-lite tool hints now show `execute_tool()` call examples instead of direct tool names, preventing Claude web from calling tools that don't exist in lite profile.
+
+<details>
+<summary>v2.3.0</summary>
 
 - **Tool Profiles (lite/full)** — New `lite` profile for web clients (Claude.ai, etc.). Reduces 89 tools to 14, cutting context consumption by 87%. Use `/mcp?profile=lite`.
   - **8 chain tools** + 4 core tools + 2 meta tools = 14 tools with full coverage
   - `discover_tools`: Find specialized tools by intent/category
   - `execute_tool`: Execute any tool via proxy
 - **kordoc Unified Parser** — Replaced 5 internal HWP5/HWPX/PDF parsers with [kordoc](https://github.com/chrisryugj/kordoc). Lighter dependencies.
+
+</details>
 
 <details>
 <summary>v2.2.0</summary>
@@ -90,11 +100,13 @@ Get your free API key at [법제처 Open API](https://open.law.go.kr/LSO/openApi
 
 ### Option 2: Remote (No Install)
 
+Include your API key in the URL:
+
 ```json
 {
   "mcpServers": {
     "korean-law": {
-      "url": "https://korean-law-mcp.fly.dev/mcp"
+      "url": "https://korean-law-mcp.fly.dev/mcp?oc=your-api-key"
     }
   }
 }
@@ -102,17 +114,21 @@ Get your free API key at [법제처 Open API](https://open.law.go.kr/LSO/openApi
 
 **For web clients (Claude.ai, etc.)** — use lite profile to save context:
 
-```json
-{
-  "mcpServers": {
-    "korean-law": {
-      "url": "https://korean-law-mcp.fly.dev/mcp?profile=lite"
-    }
-  }
-}
+```
+https://korean-law-mcp.fly.dev/mcp?profile=lite&oc=your-api-key
 ```
 
 > Lite profile exposes 14 tools (8 chains + 4 core + 2 meta) covering the same functionality. Use `discover_tools` → `execute_tool` for specialized tools.
+
+**API Key Delivery** (priority order):
+
+| Method | Example | Notes |
+|--------|---------|-------|
+| URL query | `?oc=your-key` | Simplest for web clients. Auto-applies to entire session |
+| HTTP header | `apikey: your-key` | Also supports `law-oc`, `x-api-key`, `Authorization: Bearer` |
+| Tool parameter | `apiKey: "your-key"` | Per-tool override |
+
+> Get your free API key at [법제처 Open API](https://open.law.go.kr/LSO/openApi/guideResult.do).
 
 ### Option 3: CLI
 
