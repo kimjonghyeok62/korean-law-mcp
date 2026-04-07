@@ -1,6 +1,6 @@
 # Korean Law MCP
 
-**89 tools to search, retrieve, and analyze Korean law** — statutes, precedents, ordinances, treaties, and more.
+**39 APIs compressed into 14 tools.** Search, retrieve, and analyze Korean law — statutes, precedents, ordinances, treaties, and more.
 
 [![npm version](https://img.shields.io/npm/v/korean-law-mcp.svg)](https://www.npmjs.com/package/korean-law-mcp)
 [![MCP 1.27](https://img.shields.io/badge/MCP-1.27-blue)](https://modelcontextprotocol.io)
@@ -15,25 +15,28 @@
 
 ---
 
-## What's New in v2.3
+## What's New in v3.0.0 — Unified Architecture
 
-**Remote MCP Endpoints** (replace `your-key` with your own API key from [법제처 Open API](https://open.law.go.kr/LSO/openApi/guideResult.do)):
+v2 structured 39 legal APIs into 89 MCP tools. v3 re-compresses them into **14 tools**.
 
-| Profile | URL | Tools | Best for |
-|---------|-----|-------|----------|
-| lite | `https://korean-law-mcp.fly.dev/mcp?profile=lite&oc=your-key` | 14 | Claude.ai and web clients (87% less context) |
-| full | `https://korean-law-mcp.fly.dev/mcp?oc=your-key` | 89 | Claude Desktop, Cursor, native clients |
+| | Raw APIs | v2 | v3 |
+|---|:---:|:---:|:---:|
+| Tool count | 39 | 89 | **14** |
+| AI context cost | - | ~110 KB | **~20 KB** |
+| Coverage | - | 100% | **100%** |
+| Profile management | - | lite/full split | **Single (none needed)** |
 
-Example: if your key is `honggildong` → `https://korean-law-mcp.fly.dev/mcp?profile=lite&oc=honggildong`
+**What changed:** 34 individual search/get tools for precedents, constitutional court, tax tribunal, FTC, etc. are now unified into 2 tools: `search_decisions(domain)` + `get_decision_text(domain)`, covering **17 domains** with a single `domain` parameter.
 
-> Lite covers the same functionality with 8 chains + 4 core + 2 meta tools. Use `discover_tools` → `execute_tool` for specialized tools.
+**Why it matters:**
+- AI picks the right tool faster (14 vs 89 to choose from)
+- 82% less context consumed by tool schemas
+- No more lite/full profile confusion
+- All 17 decision domains accessible without `discover_tools`
 
-- **Tool Profiles (lite/full)** — Auto-reduces 89 → 14 tools. Chain tools call sub-tools internally, so no functionality is lost.
-- **URL Query API Key** — `?oc=your-key` auto-applies to the entire session. Essential for web clients where custom headers are hard to configure.
-- **Chain Auto Full-Text** — `chain_ordinance_compare` now auto-fetches the full text of the top search result. No separate `get_ordinance` call needed.
-- **Lite Routing Fix** — Rewrote chain/meta tool descriptions with INPUT-intent patterns and examples. Claude web now correctly picks tools for ordinance search/lookup queries.
-- **Tool Hint Unification** — All non-lite tool hints show `execute_tool()` call examples instead of direct tool names, preventing calls to tools not in lite profile.
-- **kordoc Unified Parser** — Replaced 5 internal HWP5/HWPX/PDF parsers with [kordoc](https://github.com/chrisryugj/kordoc). Lighter dependencies.
+Other changes:
+- **kordoc 1.6 → 2.1** — Document parsing engine upgrade (XLSX/DOCX support added)
+- **Bug fixes** — Admin appeal text retrieval, English law text retrieval
 
 <details>
 <summary>v2.2.0</summary>
@@ -114,13 +117,9 @@ Include your API key in the URL:
 }
 ```
 
-**For web clients (Claude.ai, etc.)** — use lite profile to save context:
+**For web clients (Claude.ai, etc.)** — same URL works everywhere. v3 exposes only 14 tools by default, no profile selection needed.
 
-```
-https://korean-law-mcp.fly.dev/mcp?profile=lite&oc=your-api-key
-```
-
-> Lite profile exposes 14 tools (8 chains + 4 core + 2 meta) covering the same functionality. Use `discover_tools` → `execute_tool` for specialized tools.
+> 14 tools (8 chains + 2 core + 2 unified + 2 meta) cover all 39 APIs. Use `discover_tools` → `execute_tool` for specialized tools.
 
 **API Key Delivery** (priority order):
 
@@ -141,7 +140,7 @@ export LAW_OC=your-api-key
 korean-law search_law --query "관세법"
 korean-law get_law_text --mst 160001 --jo "제38조"
 korean-law search_precedents --query "부당해고"
-korean-law list                          # all 89 tools
+korean-law list                          # all tools
 korean-law list --category 판례          # filter by category
 korean-law help search_law               # tool help
 ```
@@ -298,7 +297,7 @@ Composite research workflows — multiple tools in a single call.
 
 ### Meta Tools (2)
 
-Tools for the lite profile — discover and execute any of the 89 tools dynamically.
+Discover and execute any of the 77 specialized tools dynamically.
 
 | Tool | Description |
 |------|-------------|
@@ -342,12 +341,12 @@ User: "산업안전보건법 별표1 내용"
 
 ## Features
 
-- **89 Legal Tools** — Statutes, precedents, admin rules, ordinances, constitutional decisions, tax rulings, customs interpretations, treaties, institutional rules, legal terminology
-- **MCP + CLI** — Use from Claude Desktop or from your terminal. Same 89 tools.
+- **39 APIs → 14 Tools** — Statutes, precedents, admin rules, ordinances, constitutional decisions, tax rulings, customs interpretations, treaties, institutional rules, legal terminology
+- **MCP + CLI** — Use from Claude Desktop or from your terminal
+- **17 Decision Domains** — `search_decisions` covers precedents, constitutional court, tax tribunal, FTC, NLRC, customs, and 11 more domains in one tool
 - **Korean Law Intelligence** — Auto-resolves abbreviations (`화관법` → `화학물질관리법`), converts article numbers (`제38조` ↔ `003800`), visualizes 3-tier delegation
-- **Annex Extraction** — Downloads HWPX/HWP annexes and converts tables to Markdown automatically
+- **Annex Extraction** — Downloads HWPX/HWP/PDF/XLSX/DOCX annexes and converts to Markdown ([kordoc](https://github.com/chrisryugj/kordoc) engine)
 - **8 Chain Tools** — Composite research workflows in a single call (e.g. `chain_full_research`: AI search → statutes → precedents → interpretations)
-- **Tool Profiles** — `lite` (14 tools for web clients) and `full` (89 tools for power users)
 - **Caching** — 1-hour search cache, 24-hour article cache
 - **Remote Endpoint** — Use without installation via `https://korean-law-mcp.fly.dev/mcp`
 

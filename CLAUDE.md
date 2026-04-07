@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Korean Law MCP Server v2.3.2 - 법제처 API 기반 MCP 서버 (89개 도구) + 자연어 CLI + 도구 프로필
+Korean Law MCP Server v3.0.0 - 법제처 39개 API → 14개 통합 도구 (내부 91개) + 자연어 CLI
 
 ## Structure
 
@@ -8,7 +8,7 @@ Korean Law MCP Server v2.3.2 - 법제처 API 기반 MCP 서버 (89개 도구) + 
 src/
 ├── index.ts              # 엔트리포인트 (STDIO/HTTP 모드)
 ├── cli.ts                # CLI v2.0 (자연어 라우팅 + REPL)
-├── tool-registry.ts      # 89개 도구 등록 (프로필 기반 필터링)
+├── tool-registry.ts      # 91개 도구 등록, V3_EXPOSED 14개만 노출
 ├��─ tools/                # 도구 구현 (46개 파일, 각 200줄 미만)
 ├── lib/
 │   ├── api-client.ts     # API 클라이언트 (throwIfError/checkHtmlError 통일)
@@ -21,7 +21,7 @@ src/
 │   ├── search-normalizer.ts  # 검색어 정규화 (LexDiff)
 │   ├── law-parser.ts     # JO 코드 변환 (LexDiff)
 │   ├── annex-file-parser.ts  # 별표 파일 파서 (kordoc 통합 파서)
-│   ├── tool-profiles.ts  # 도구 프로필 (lite/full) + 카테고리 매핑
+│   ├── tool-profiles.ts  # 도구 카테고리 매핑 (discover_tools용)
 │   ├── article-parser.ts # 조문 파서 (항/호/목 단일객체 정규화)
 │   ├── cache.ts          # LRU 캐시 (TTL, 만료 우선 eviction)
 │   ├── three-tier-parser.ts  # 3단 비교 파서
@@ -114,18 +114,19 @@ get_law_text(mst, jo="006300") → 제63조(휴직) 조회
 |------|------|
 | `cli.ts` | CLI v2.0 — 자연어 라우팅 + REPL |
 | `lib/query-router.ts` | 자연어 → 도구 자동 라우팅 엔진 |
-| `tool-registry.ts` | 89개 도구 정의 및 등록 (프로필 필터) |
+| `tool-registry.ts` | 91개 도구 정의, V3_EXPOSED 14개 노출 |
+| `tools/unified-decisions.ts` | 17개 도메인 통합 (search_decisions + get_decision_text) |
 | `lib/fetch-with-retry.ts` | 30초 타임아웃, 3회 재시도 |
 | `lib/session-state.ts` | 멀티세션 API 키 격리 |
 | `lib/xml-parser.ts` | 6개 도메인별 XML 파서 |
-| `lib/annex-file-parser.ts` | 별표 파싱 (kordoc 통합 파서 사용) |
-| `lib/tool-profiles.ts` | 도구 프로필 (lite 14개 / full 89개) + 카테고리 매핑 |
-| `tools/meta-tools.ts` | discover_tools + execute_tool (lite 프로필용 메타 도구) |
+| `lib/annex-file-parser.ts` | 별표 파싱 (kordoc 2.x 통합 파서) |
+| `lib/tool-profiles.ts` | 도구 카테고리 매핑 (discover_tools용) |
+| `tools/meta-tools.ts` | discover_tools + execute_tool (전문 도구 접근) |
 | `lib/article-parser.ts` | 조문 파서 (cleanHtml, extractHangContent) |
 
 ## Docs
 
 상세 정보는 별도 문서 참조:
-- [docs/API.md](docs/API.md) - 89개 도구 레퍼런스
+- [docs/API.md](docs/API.md) - 도구 레퍼런스 (14개 노출 + 77개 execute_tool 접근)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - 시스템 설계, 데이터 플로우
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) - 개발 가이드
