@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.0.2] - 2026-04-08
+
+### Added
+- `npx korean-law-mcp setup` — 대화형 설치 마법사 (API 키 입력 → 8개 클라이언트 자동 설정)
+- 지원 클라이언트: Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, Gemini CLI, Zed, Antigravity
+- STDIO 모드에서 `MCP_PROFILE` 환경변수 지원
+
+### Fixed
+- API 커버리지 수치 39개 → 41개로 정정 (실제 사용 target 기준 재집계)
+
 ## [3.0.1] - 2026-04-08
 
 ### Added

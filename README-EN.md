@@ -1,6 +1,6 @@
 # Korean Law MCP
 
-**39 APIs compressed into 14 tools.** Search, retrieve, and analyze Korean law — statutes, precedents, ordinances, treaties, and more.
+**41 APIs compressed into 14 tools.** Search, retrieve, and analyze Korean law — statutes, precedents, ordinances, treaties, and more.
 
 [![npm version](https://img.shields.io/npm/v/korean-law-mcp.svg)](https://www.npmjs.com/package/korean-law-mcp)
 [![MCP 1.27](https://img.shields.io/badge/MCP-1.27-blue)](https://modelcontextprotocol.io)
@@ -74,6 +74,17 @@ This project wraps that entire legal system into **89 structured tools** that an
 
 ### Option 1: MCP Server (Claude Desktop / Cursor / Windsurf)
 
+**Auto setup (recommended):**
+
+```bash
+npx korean-law-mcp setup
+```
+
+Interactive wizard handles API key input, client selection, and config file registration.
+Supports Claude Desktop, Claude Code, Cursor, VS Code, Windsurf, and Gemini CLI.
+
+**Manual setup:**
+
 ```bash
 npm install -g korean-law-mcp
 ```
@@ -119,7 +130,7 @@ Include your API key in the URL:
 
 **For web clients (Claude.ai, etc.)** — same URL works everywhere. v3 exposes only 14 tools by default, no profile selection needed.
 
-> 14 tools (8 chains + 2 core + 2 unified + 2 meta) cover all 39 APIs. Use `discover_tools` → `execute_tool` for specialized tools.
+> 14 tools (8 chains + 2 core + 2 unified + 2 meta) cover all 41 APIs. Use `discover_tools` → `execute_tool` for specialized tools.
 
 **API Key Delivery** (priority order):
 
@@ -341,7 +352,7 @@ User: "산업안전보건법 별표1 내용"
 
 ## Features
 
-- **39 APIs → 14 Tools** — Statutes, precedents, admin rules, ordinances, constitutional decisions, tax rulings, customs interpretations, treaties, institutional rules, legal terminology
+- **41 APIs → 14 Tools** — Statutes, precedents, admin rules, ordinances, constitutional decisions, tax rulings, customs interpretations, treaties, institutional rules, legal terminology
 - **MCP + CLI** — Use from Claude Desktop or from your terminal
 - **17 Decision Domains** — `search_decisions` covers precedents, constitutional court, tax tribunal, FTC, NLRC, customs, and 11 more domains in one tool
 - **Korean Law Intelligence** — Auto-resolves abbreviations (`화관법` → `화학물질관리법`), converts article numbers (`제38조` ↔ `003800`), visualizes 3-tier delegation
