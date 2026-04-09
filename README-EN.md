@@ -35,7 +35,7 @@ v2 structured 39 legal APIs into 89 MCP tools. v3 re-compresses them into **14 t
 - All 17 decision domains accessible without `discover_tools`
 
 Other changes:
-- **kordoc 1.6 → 2.1** — Document parsing engine upgrade (XLSX/DOCX support added)
+- **kordoc 1.6 → 2.2.1** — Document parsing engine upgrade (XLSX/DOCX support, GFM table escaping)
 - **Bug fixes** — Admin appeal text retrieval, English law text retrieval
 
 <details>
