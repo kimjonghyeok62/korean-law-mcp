@@ -32,6 +32,13 @@
 > **No changes to how you use it.** Ask naturally, get deeper analysis automatically.
 
 <details>
+<summary>v3.2.1 changes</summary>
+
+**v3.2.1** — kordoc 2.2.5 update.
+
+</details>
+
+<details>
 <summary>v3.1.0~v3.1.5 changes</summary>
 
 **v3.1.5** — kordoc 2.2.4 + README modernization.
@@ -70,7 +77,7 @@ v2 structured 41 legal APIs into 89 MCP tools. v3 re-compresses them into **14 t
 
 **What changed:** 34 individual search/get tools for precedents, constitutional court, tax tribunal, FTC, etc. are now unified into 2 tools: `search_decisions(domain)` + `get_decision_text(domain)`, covering **17 domains** with a single `domain` parameter.
 
-- **kordoc 1.6 → 2.2.4** — Document parsing engine upgrade (XLSX/DOCX support, security hardening, form filler)
+- **kordoc 1.6 → 2.2.5** — Document parsing engine upgrade (XLSX/DOCX support, security hardening, form filler)
 - **Bug fixes** — Admin appeal text retrieval, English law text retrieval
 
 </details>
@@ -249,7 +256,7 @@ User: "산업안전보건법 별표1 내용"
 - **MCP + CLI** — Use from Claude Desktop or from your terminal
 - **17 Decision Domains** — `search_decisions` covers precedents, constitutional court, tax tribunal, FTC, NLRC, customs, and 11 more domains in one tool
 - **Korean Law Intelligence** — Auto-resolves abbreviations (`화관법` → `화학물질관리법`), converts article numbers (`제38조` ↔ `003800`), visualizes 3-tier delegation
-- **Annex Extraction** — Downloads HWPX/HWP/PDF/XLSX/DOCX annexes and converts to Markdown ([kordoc](https://github.com/chrisryugj/kordoc) v2.2.4 engine)
+- **Annex Extraction** — Downloads HWPX/HWP/PDF/XLSX/DOCX annexes and converts to Markdown ([kordoc](https://github.com/chrisryugj/kordoc) v2.2.5 engine)
 - **8 Chain Tools** — Composite research workflows in a single call (e.g. `chain_full_research`: AI search → statutes → precedents → interpretations)
 - **Caching** — 1-hour search cache, 24-hour article cache
 - **Remote Endpoint** — Use without installation via `https://korean-law-mcp.fly.dev/mcp`
