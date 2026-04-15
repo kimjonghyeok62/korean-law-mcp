@@ -1,5 +1,8 @@
 /**
  * Streamable HTTP 서버 - 리모트 배포용 (MCP 표준)
+ *
+ * createExpressApp() : Express 앱 반환 (Vercel serverless 진입점용)
+ * startHTTPServer()  : createExpressApp() + app.listen() (Fly.io / 자체 서버용)
  */
 
 import express from "express"
@@ -19,18 +22,23 @@ interface SessionInfo {
   lastAccess: number
 }
 
-// 세션 맵
+// 세션 맵 — 모듈 수준으로 유지해 Vercel warm instance 간 재사용
 const MAX_SESSIONS = 100
 const sessions = new Map<string, SessionInfo>()
 
-export async function startHTTPServer(createServer: (profile?: ToolProfile) => Server, port: number) {
+/**
+ * Express 앱 생성 및 설정 반환
+ * Vercel serverless: `export default createExpressApp(createMcpServer)`
+ * 자체 서버:         `createExpressApp(fn).listen(port)`
+ */
+export function createExpressApp(createServer: (profile?: ToolProfile) => Server): express.Application {
   const app = express()
-  // Fly.io proxy 뒤에서 실제 클라이언트 IP 인식 (rate limit per-IP 정상 동작)
+  // Vercel / Fly.io proxy 뒤에서 실제 클라이언트 IP 인식
   app.set("trust proxy", true)
   app.use(express.json({ limit: "100kb" }))
 
   // 10분 idle 세션 자동 정리 (2분마다 체크)
-  const SESSION_MAX_IDLE = 10 * 60 * 1000 // 10분
+  const SESSION_MAX_IDLE = 10 * 60 * 1000
   setInterval(() => {
     const now = Date.now()
     let cleaned = 0
@@ -85,17 +93,15 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
     }, 5 * 60 * 1000).unref()
   }
 
-  // CORS 및 보안 헤더 설정 (CORS_ORIGIN 미설정 시 경고)
+  // CORS 및 보안 헤더
   const corsOrigin = process.env.CORS_ORIGIN || "*"
   if (corsOrigin === "*") {
     console.error("⚠️  CORS_ORIGIN 미설정 — 모든 도메인 허용 중. 프로덕션에서는 CORS_ORIGIN 환경변수를 설정하세요.")
   }
   app.use((req, res, next) => {
-    // CORS
     res.header("Access-Control-Allow-Origin", corsOrigin)
     res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
     res.header("Access-Control-Allow-Headers", "Content-Type, mcp-session-id, last-event-id")
-    // Security headers
     res.header("X-Content-Type-Options", "nosniff")
     res.header("X-Frame-Options", "DENY")
     res.header("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -132,7 +138,7 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
   app.post("/mcp", async (req, res) => {
     console.error(`[POST /mcp] Received request`)
 
-    // Extract API key: URL query > header > 기존 세션
+    // API 키: URL query > 각종 헤더
     const apiKeyFromQuery = req.query.oc as string | undefined
     const apiKeyFromHeader =
       apiKeyFromQuery ||
@@ -150,24 +156,20 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
       const existingSession = sessionId ? sessions.get(sessionId) : undefined
 
       if (existingSession) {
-        // 기존 세션 재사용
         console.error(`[POST /mcp] Reusing session: ${sessionId}`)
         transport = existingSession.transport
         existingSession.lastAccess = Date.now()
 
-        // API 키 업데이트 (헤더에서 제공된 경우)
         if (apiKeyFromHeader) {
           setSessionApiKey(sessionId!, apiKeyFromHeader as string)
         }
 
-        // AsyncLocalStorage로 세션 ID 격리 (동시 요청 안전)
         await sessionStore.run(sessionId, async () => {
           await transport.handleRequest(req, res, req.body)
         })
         return
       } else if (sessionId && !existingSession) {
-        // 세션 ID가 있지만 서버에 없음 (suspend 후 재시작 등)
-        // MCP 스펙: 404 반환 → 클라이언트가 새 세션으로 재초기화
+        // 세션 없음 (Vercel cold start 포함) → 404로 클라이언트 재초기화 유도
         console.error(`[POST /mcp] Unknown session ID: ${sessionId} (returning 404 for re-init)`)
         res.status(404).json({
           jsonrpc: "2.0",
@@ -179,7 +181,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
         })
         return
       } else if (!sessionId && isInitializeRequest(req.body)) {
-        // 세션 수 제한 — transport 생성 전에 체크하여 리소스 누수 방지
         if (sessions.size >= MAX_SESSIONS) {
           res.status(503).json({
             jsonrpc: "2.0",
@@ -188,7 +189,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
           })
           return
         }
-        // 새 세션 초기화 — URL 쿼리파라미터에서 프로필 결정
         const profile = parseProfile(req.query.profile as string | undefined)
         console.error(`[POST /mcp] New initialization request (profile: ${profile})`)
 
@@ -211,7 +211,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
           }
         })
 
-        // Transport 종료 시 정리
         transport.onclose = () => {
           const sid = transport.sessionId
           if (sid && sessions.has(sid)) {
@@ -221,12 +220,10 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
           }
         }
 
-        // 세션별 MCP 서버에 연결
         await sessionServer.connect(transport)
         await transport.handleRequest(req, res, req.body)
         return
       } else {
-        // 잘못된 요청
         console.error(`[POST /mcp] Invalid request: No valid session ID or init request`)
         res.status(400).json({
           jsonrpc: "2.0",
@@ -262,7 +259,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
       const session = sessionId ? sessions.get(sessionId) : undefined
 
       if (!session) {
-        // MCP 스펙: 모르는 세션 → 404 (클라이언트 재초기화 유도)
         console.error(`[GET /mcp] Unknown session ID: ${sessionId} (returning 404)`)
         res.status(404).send("Session not found. Please reinitialize.")
         return
@@ -292,7 +288,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
       const session = sessionId ? sessions.get(sessionId) : undefined
 
       if (!session) {
-        // 이미 없는 세션 → 404 (idempotent하게 처리)
         console.error(`[DELETE /mcp] Unknown session ID: ${sessionId} (returning 404)`)
         res.status(404).send("Session not found")
         return
@@ -310,7 +305,15 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
     }
   })
 
-  // 서버 시작 (0.0.0.0으로 바인딩하여 외부 접속 허용)
+  return app
+}
+
+/**
+ * 자체 서버(Fly.io 등) 시작용 — createExpressApp() + app.listen()
+ */
+export async function startHTTPServer(createServer: (profile?: ToolProfile) => Server, port: number) {
+  const app = createExpressApp(createServer)
+
   const expressServer = app.listen(port, "0.0.0.0", () => {
     console.error(`✓ Korean Law MCP server (HTTP mode) listening on port ${port}`)
     console.error(`✓ MCP endpoint: http://0.0.0.0:${port}/mcp`)
@@ -318,7 +321,6 @@ export async function startHTTPServer(createServer: (profile?: ToolProfile) => S
     console.error(`✓ Transport: Streamable HTTP`)
   })
 
-  // 종료 처리
   async function gracefulShutdown(signal: string) {
     console.error(`${signal} received, shutting down server...`)
 

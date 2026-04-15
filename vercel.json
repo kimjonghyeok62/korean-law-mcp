@@ -1,0 +1,11 @@
+{
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/server.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/server" }
+  ]
+}
