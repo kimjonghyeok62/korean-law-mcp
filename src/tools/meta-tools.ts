@@ -13,8 +13,10 @@ import type { McpTool, ToolResponse } from "../lib/types.js"
 
 // allTools 참조 (순환참조 방지를 위해 런타임 주입)
 let _allTools: McpTool[] = []
+let _toolMap = new Map<string, McpTool>()
 export function setAllToolsRef(tools: McpTool[]) {
   _allTools = tools
+  _toolMap = new Map(tools.map(t => [t.name, t]))
 }
 
 // ========================================
@@ -39,7 +41,7 @@ export async function discoverTools(
     }
     // 도구 이름/설명에서도 매칭
     const matchedTools = toolNames.filter(name => {
-      const tool = _allTools.find(t => t.name === name)
+      const tool = _toolMap.get(name)
       if (!tool) return false
       return name.includes(query) || tool.description.toLowerCase().includes(query)
     })
@@ -60,7 +62,7 @@ export async function discoverTools(
 
   const sections = matches.map(m => {
     const toolDetails = m.tools.map(name => {
-      const tool = _allTools.find(t => t.name === name)
+      const tool = _toolMap.get(name)
       return `  - ${name}: ${tool?.description || "(설명 없음)"}`
     }).join("\n")
     return `[${m.category}]\n${toolDetails}`
@@ -94,7 +96,7 @@ export async function executeTool(
     }
   }
 
-  const tool = _allTools.find(t => t.name === input.tool_name)
+  const tool = _toolMap.get(input.tool_name)
   if (!tool) {
     return {
       content: [{ type: "text", text: `도구를 찾을 수 없습니다: ${input.tool_name}\ndiscover_tools로 사용 가능한 도구를 먼저 확인하세요.` }],
