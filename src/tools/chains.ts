@@ -475,6 +475,82 @@ async function collectAmendmentMsts(
   return result
 }
 
+/**
+ * 특정 조문(jo)에 영향을 준 개정 MST 목록 (오래된 순 정렬)
+ * collectAmendmentMsts와 달리 jo 파라미터를 API에 넘겨 해당 조문 변경 이력만 추출
+ */
+async function collectArticleJoMsts(
+  apiClient: LawApiClient,
+  lawId: string,
+  jo: string,
+  fromDate?: string,
+  toDate?: string,
+  apiKey?: string
+): Promise<Array<{ mst: string; promDate: string; changeType: string; changeReason: string }>> {
+  const xmlText = await apiClient.getArticleHistory({
+    lawId,
+    jo,
+    fromRegDt: fromDate,
+    toRegDt: toDate,
+    apiKey,
+  })
+  const seen = new Set<string>()
+  const result: Array<{ mst: string; promDate: string; changeType: string; changeReason: string }> = []
+
+  const lawBlockRe = /<law[^>]*>([\s\S]*?)<\/law>/g
+  let m: RegExpExecArray | null
+  while ((m = lawBlockRe.exec(xmlText)) !== null) {
+    const block = m[1]
+    const infoBlock = /<법령정보>([\s\S]*?)<\/법령정보>/.exec(block)?.[1] ?? ""
+    const mst = extractTag(infoBlock, "법령일련번호")
+    if (!mst || seen.has(mst)) continue
+    seen.add(mst)
+
+    const promDate = extractTag(infoBlock, "공포일자")
+    const changeType = extractTag(infoBlock, "제개정구분명")
+    const joBlock = /<jo[^>]*>([\s\S]*?)<\/jo>/.exec(block)?.[1] ?? ""
+    const changeReason = extractTag(joBlock, "변경사유")
+
+    result.push({ mst, promDate, changeType, changeReason })
+  }
+
+  // 타임라인 순(오래된 → 최신) 정렬
+  result.sort((a, b) => a.promDate.localeCompare(b.promDate))
+  return result
+}
+
+/**
+ * 법령 전체 연혁 버전 MST 목록 (최신순)
+ * lsHistory HTML 파싱 — 이전 버전 MST 탐색에 사용
+ */
+async function fetchVersionMstList(
+  apiClient: LawApiClient,
+  lawName: string,
+  apiKey?: string
+): Promise<Array<{ mst: string; efYd: string }>> {
+  try {
+    const html = await apiClient.fetchApi({
+      endpoint: "lawSearch.do",
+      target: "lsHistory",
+      type: "HTML",
+      extraParams: { query: lawName, display: "100", sort: "efdes" },
+      apiKey,
+    })
+    const entries: Array<{ mst: string; efYd: string }> = []
+    const rowRe = /<tr[^>]*>[\s\S]*?<\/tr>/gi
+    const rows = html.match(rowRe) ?? []
+    for (const row of rows) {
+      const link = row.match(/MST=(\d+)[^"]*efYd=(\d*)/)
+      if (link) entries.push({ mst: link[1], efYd: link[2] ?? "0" })
+    }
+    // 최신순(efYd 내림차순) 정렬 — index+1 이 이전 버전
+    entries.sort((a, b) => parseInt(b.efYd || "0") - parseInt(a.efYd || "0"))
+    return entries
+  } catch {
+    return []
+  }
+}
+
 export const chainAmendmentTrackSchema = z.object({
   query: z.string().describe("법령명 (예: '관세법', '지방세특례제한법')"),
   mst: z.string().optional().describe("법령일련번호 (알고 있으면)"),
@@ -940,21 +1016,69 @@ export async function chainArticleHistory(
     }
     parts.push(sec("조문 개정 이력", artHistory.text))
 
-    // Step 3: 신구대조표 + 개정이유 (includeComparison=true)
+    // Step 3: 조문 내용 연혁 (개정 전후 본문 대조)
     if (input.includeComparison !== false) {
-      const amendments = await collectAmendmentMsts(apiClient, law.lawId, input.fromDate, input.apiKey)
-      const toFetch = amendments.slice(0, input.maxAmendments ?? 5)
+      if (normalizedJo) {
+        // jo 지정: 해당 조문에만 영향을 준 MST만 추출 → 조문 본문 before/after 정확 비교
+        const joAmends = await collectArticleJoMsts(
+          apiClient, law.lawId, normalizedJo,
+          input.fromDate, input.toDate, input.apiKey
+        )
+        const toFetch = joAmends.slice(0, input.maxAmendments ?? 5)
 
-      if (toFetch.length > 0) {
-        const compParts: string[] = []
-        for (const amend of toFetch) {
-          const oldNew = await callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey })
-          if (!oldNew.isError && oldNew.text.trim()) {
-            compParts.push(`▸ ${amend.promDate} ${amend.changeType} (MST: ${amend.mst})\n${oldNew.text}`)
+        if (toFetch.length > 0) {
+          // 전체 연혁 버전 목록 (이전 버전 MST 탐색용)
+          const allVersions = await fetchVersionMstList(apiClient, law.lawName, input.apiKey)
+          const mstToIdx = new Map(allVersions.map((v, i) => [v.mst, i]))
+
+          // 동일 MST 중복 조회 방지 캐시
+          const contentCache = new Map<string, string>()
+          const getContent = async (mst: string): Promise<string> => {
+            if (contentCache.has(mst)) return contentCache.get(mst)!
+            const res = await callTool(getHistoricalLaw, apiClient, {
+              mst, jo: normalizedJo, apiKey: input.apiKey,
+            })
+            const text = res.isError ? `(조회 실패: ${res.text})` : res.text
+            contentCache.set(mst, text)
+            return text
+          }
+
+          const compParts: string[] = []
+          for (const amend of toFetch) {
+            const afterText = await getContent(amend.mst)
+
+            // 이전 버전 MST: allVersions에서 index+1 (최신순이므로 +1이 이전)
+            const idx = mstToIdx.get(amend.mst)
+            const prevMst = idx != null ? allVersions[idx + 1]?.mst : undefined
+            const isNew = amend.changeReason.includes("신설") || !prevMst
+            const beforeText = isNew ? "(신설)" : await getContent(prevMst!)
+
+            const header = `▸ ${amend.promDate} ${amend.changeType} (MST: ${amend.mst})`
+            const reasonLine = amend.changeReason ? `변경사유: ${amend.changeReason}\n` : ""
+            compParts.push(
+              `${header}\n${reasonLine}\n[개정 전]\n${beforeText}\n\n[개정 후]\n${afterText}`
+            )
+          }
+          if (compParts.length > 0) {
+            parts.push(sec("조문 내용 연혁 (개정 전후 대조)", compParts.join("\n\n---\n\n")))
           }
         }
-        if (compParts.length > 0) {
-          parts.push(sec("신구대조표 및 개정이유", compParts.join("\n\n---\n\n")))
+      } else {
+        // jo 미지정: 법령 전체 신구대조표 (기존 방식)
+        const amendments = await collectAmendmentMsts(apiClient, law.lawId, input.fromDate, input.apiKey)
+        const toFetch = amendments.slice(0, input.maxAmendments ?? 5)
+
+        if (toFetch.length > 0) {
+          const compParts: string[] = []
+          for (const amend of toFetch) {
+            const oldNew = await callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey })
+            if (!oldNew.isError && oldNew.text.trim()) {
+              compParts.push(`▸ ${amend.promDate} ${amend.changeType} (MST: ${amend.mst})\n${oldNew.text}`)
+            }
+          }
+          if (compParts.length > 0) {
+            parts.push(sec("신구대조표 및 개정이유", compParts.join("\n\n---\n\n")))
+          }
         }
       }
     }
