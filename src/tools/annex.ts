@@ -225,7 +225,14 @@ async function extractAnnexContent(
   }
 
   const header = `${normalizedLawName} - ${annexTitle}\n(파일 형식: ${result.fileType.toUpperCase()}${result.pageCount ? `, ${result.pageCount}페이지` : ""})\n\n`
-  const fullText = header + markdown
+  let fullText = header + markdown
+
+  // 표 데이터 구조화 첨부 — 수치(과태료·수수료·기준금액) 계산 보조용
+  if (result.tables && result.tables.length > 0) {
+    const tableJson = JSON.stringify(result.tables, null, 2)
+    fullText += `\n\n=== 표 데이터 (구조화 JSON) ===\n${tableJson}\n`
+  }
+
   return {
     content: [{
       type: "text",

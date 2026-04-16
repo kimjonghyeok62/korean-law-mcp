@@ -279,32 +279,28 @@ export async function chainLawSystem(
       `법령ID: ${p.lawId} | MST: ${p.mst} | 구분: ${p.lawType}`,
     ]
 
-    // 3단 비교
-    const threeTier = await callTool(getThreeTier, apiClient, { mst: p.mst, apiKey: input.apiKey })
-    if (!threeTier.isError) parts.push(sec("3단 비교 (법률·시행령·시행규칙)", threeTier.text))
-
-    // 조문 조회
-    if (input.articles?.length) {
-      const batch = await callTool(getBatchArticles, apiClient, {
-        mst: p.mst,
-        articles: input.articles,
-        apiKey: input.apiKey,
-      })
-      if (!batch.isError) parts.push(sec("핵심 조문", batch.text))
-    }
-
-    // 키워드 확장: 별표
+    // 3단 비교 + 조문 조회 + 별표 + 시나리오 — MST 획득 후 모두 병렬 실행
     const exp = detectExpansions(input.query)
-    if (exp.includes("annex_fee") || exp.includes("annex_table") || exp.includes("annex_form")) {
-      const annexes = await callTool(getAnnexes, apiClient, { lawName: p.lawName, apiKey: input.apiKey })
-      if (!annexes.isError) parts.push(sec("별표/서식", annexes.text))
-    }
-
-    // Scenario 확장
+    const needsAnnex = exp.includes("annex_fee") || exp.includes("annex_table") || exp.includes("annex_form")
     const scenario = (input.scenario || detectScenario(input.query, "chain_law_system")) as ScenarioType | null
-    if (scenario) {
-      const ctx: ScenarioContext = { apiClient, query: input.query, law: p, apiKey: input.apiKey }
-      const sr = await runScenario(scenario, ctx)
+    const ctx: ScenarioContext = { apiClient, query: input.query, law: p, apiKey: input.apiKey }
+    const noop: CallResult = { text: "", isError: true }
+
+    const [threeTier, batch, annexes, sr] = await Promise.all([
+      callTool(getThreeTier, apiClient, { mst: p.mst, apiKey: input.apiKey }),
+      input.articles?.length
+        ? callTool(getBatchArticles, apiClient, { mst: p.mst, articles: input.articles, apiKey: input.apiKey })
+        : Promise.resolve(noop),
+      needsAnnex
+        ? callTool(getAnnexes, apiClient, { lawName: p.lawName, apiKey: input.apiKey })
+        : Promise.resolve(noop),
+      scenario ? runScenario(scenario, ctx) : Promise.resolve(null),
+    ])
+
+    if (!threeTier.isError) parts.push(sec("3단 비교 (법률·시행령·시행규칙)", threeTier.text))
+    if (input.articles?.length && !batch.isError) parts.push(sec("핵심 조문", batch.text))
+    if (needsAnnex && !annexes.isError) parts.push(sec("별표/서식", annexes.text))
+    if (sr) {
       parts.push(formatSections(sr.sections))
       parts.push(formatSuggestedActions(sr.suggestedActions))
     }
@@ -597,8 +593,13 @@ export async function chainAmendmentTrack(
       if (toFetch.length === 0) {
         parts.push(sec("신구대조표", "해당 기간 내 개정 이력이 없습니다."))
       } else {
-        for (const amend of toFetch) {
-          const oldNew = await callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey })
+        // 개정본별 신구대조표를 병렬 조회
+        const comparisons = await Promise.all(
+          toFetch.map(amend => callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey }))
+        )
+        for (let i = 0; i < toFetch.length; i++) {
+          const oldNew = comparisons[i]
+          const amend = toFetch[i]
           if (!oldNew.isError) {
             parts.push(sec(`신구대조표 (${amend.promDate} ${amend.changeType})`, oldNew.text))
           }
@@ -664,18 +665,21 @@ export async function chainOrdinanceCompare(
     const parentQuery = input.parentLaw || stripOrdinanceKeywords(input.query)
     const laws = parentQuery ? await findLaws(apiClient, parentQuery, input.apiKey, 2) : []
 
+    // Step 1+2: 상위법 3단 비교 + 조례 검색 병렬 실행 (독립적)
+    const ordinanceQuery = input.query.replace(/\s*(조례|규칙|자치법규)\s*/g, " ").trim() || input.query
+    const [threeTierResult, ordinances] = await Promise.all([
+      laws.length > 0
+        ? callTool(getThreeTier, apiClient, { mst: laws[0].mst, apiKey: input.apiKey })
+        : Promise.resolve({ text: "", isError: true } as CallResult),
+      callTool(searchOrdinance, apiClient, { query: ordinanceQuery, display: 20, apiKey: input.apiKey }),
+    ])
+
     if (laws.length > 0) {
       const p = laws[0]
       parts.push(sec("상위 법령", `${p.lawName} (${p.lawType}) | MST: ${p.mst}`))
-
-      // 3단 비교 (위임 근거 확인)
-      const threeTier = await callTool(getThreeTier, apiClient, { mst: p.mst, apiKey: input.apiKey })
-      if (!threeTier.isError) parts.push(sec("위임 체계 (법률·시행령·시행규칙)", threeTier.text))
+      if (!threeTierResult.isError) parts.push(sec("위임 체계 (법률·시행령·시행규칙)", threeTierResult.text))
     }
 
-    // Step 2: 조례 검색 — "조례"/"규칙" 제거 (이미 조례 DB에서 검색하므로)
-    const ordinanceQuery = input.query.replace(/\s*(조례|규칙|자치법규)\s*/g, " ").trim() || input.query
-    const ordinances = await callTool(searchOrdinance, apiClient, { query: ordinanceQuery, display: 20, apiKey: input.apiKey })
     if (!ordinances.isError) parts.push(sec("전국 자치법규 검색 결과", ordinances.text))
 
     // Step 3: 상위 1건 전문 자동 조회
@@ -804,14 +808,11 @@ export async function chainProcedureDetail(
     const p = laws[0]
     parts.push(`법령: ${p.lawName} (${p.lawType}) | MST: ${p.mst}`)
 
-    // Step 2: 3단 비교 (절차 체계 파악)
-    const threeTier = await callTool(getThreeTier, apiClient, { mst: p.mst, apiKey: input.apiKey })
-    if (!threeTier.isError) parts.push(sec("법령 체계 (절차 근거)", threeTier.text))
-
-    // Step 3: 별표(수수료/과태료) + 서식(신청서) 병렬
-    const [annexFee, annexForm] = await Promise.all([
+    // Steps 2-4: 3단 비교 + 별표(본법) + 별표(시행규칙/령) + AI 검색 — 모두 병렬 실행
+    const [threeTier, annexFee, annexForm, aiResult] = await Promise.all([
+      callTool(getThreeTier, apiClient, { mst: p.mst, apiKey: input.apiKey }),
       callTool(getAnnexes, apiClient, { lawName: p.lawName, apiKey: input.apiKey }),
-      // 시행규칙에도 별표가 있을 수 있으므로 시행규칙명으로도 시도
+      // 시행규칙/시행령에도 별표가 있을 수 있으므로 함께 시도
       (async (): Promise<CallResult> => {
         const ruleNameCandidates = [
           p.lawName.replace(/법$/, '법 시행규칙'),
@@ -825,13 +826,12 @@ export async function chainProcedureDetail(
         }
         return { text: "", isError: true }
       })(),
+      callTool(searchAiLaw, apiClient, { query: input.query, display: 5, apiKey: input.apiKey }),
     ])
 
+    if (!threeTier.isError) parts.push(sec("법령 체계 (절차 근거)", threeTier.text))
     if (!annexFee.isError) parts.push(sec(`${p.lawName} 별표/서식`, annexFee.text))
     if (!annexForm.isError && annexForm.text) parts.push(sec("시행규칙 별표/서식", annexForm.text))
-
-    // Step 4: AI 검색으로 보완 (절차 상세)
-    const aiResult = await callTool(searchAiLaw, apiClient, { query: input.query, display: 5, apiKey: input.apiKey })
     if (!aiResult.isError) parts.push(sec("AI 검색 보완 정보", aiResult.text))
 
     // Scenario 확장
@@ -856,6 +856,8 @@ export async function chainProcedureDetail(
 export const chainDocumentReviewSchema = z.object({
   text: z.string().describe("분석할 계약서/약관 전문 텍스트"),
   maxClauses: z.number().min(1).max(30).default(15).describe("분석할 최대 조항 수 (기본:15)"),
+  includeCases: z.boolean().optional().default(false)
+    .describe("리스크 탐지 항목에 대해 관련 판례·법령 자동 검색 여부 (기본값: false). true 설정 시 응답 시간 증가"),
   apiKey: z.string().optional(),
 })
 
@@ -881,8 +883,12 @@ export async function chainDocumentReview(
     // Step 2: 분석 결과에서 searchHints 추출 → 병렬로 법령+판례 검색
     const searchHints = extractSearchHints(analysisResult.text)
 
-    if (searchHints.length === 0) {
-      parts.push("\n▶ 추가 법령/판례 검색\n특별한 리스크가 없어 추가 검색을 생략합니다.\n")
+    if (searchHints.length === 0 || !input.includeCases) {
+      if (searchHints.length > 0) {
+        parts.push("\n▶ 추가 법령/판례 검색\nincludeCases: true 설정 시 관련 판례·법령을 자동으로 검색합니다.\n")
+      } else {
+        parts.push("\n▶ 추가 법령/판례 검색\n특별한 리스크가 없어 추가 검색을 생략합니다.\n")
+      }
       return wrapResult(parts.join("\n"))
     }
 
@@ -1031,34 +1037,36 @@ export async function chainArticleHistory(
           const allVersions = await fetchVersionMstList(apiClient, law.lawName, input.apiKey)
           const mstToIdx = new Map(allVersions.map((v, i) => [v.mst, i]))
 
-          // 동일 MST 중복 조회 방지 캐시
+          // 동일 MST 중복 API 호출 방지 — 진행 중인 Promise를 캐싱
           const contentCache = new Map<string, string>()
-          const getContent = async (mst: string): Promise<string> => {
-            if (contentCache.has(mst)) return contentCache.get(mst)!
-            const res = await callTool(getHistoricalLaw, apiClient, {
+          const fetchPromises = new Map<string, Promise<string>>()
+          const getContent = (mst: string): Promise<string> => {
+            if (contentCache.has(mst)) return Promise.resolve(contentCache.get(mst)!)
+            if (fetchPromises.has(mst)) return fetchPromises.get(mst)!
+            const p = callTool(getHistoricalLaw, apiClient, {
               mst, jo: normalizedJo, apiKey: input.apiKey,
+            }).then(res => {
+              const text = res.isError ? `(조회 실패: ${res.text})` : res.text
+              contentCache.set(mst, text)
+              return text
             })
-            const text = res.isError ? `(조회 실패: ${res.text})` : res.text
-            contentCache.set(mst, text)
-            return text
+            fetchPromises.set(mst, p)
+            return p
           }
 
-          const compParts: string[] = []
-          for (const amend of toFetch) {
-            const afterText = await getContent(amend.mst)
-
-            // 이전 버전 MST: allVersions에서 index+1 (최신순이므로 +1이 이전)
+          // 각 개정본을 병렬 처리 (before/after 쌍도 각 개정 내에서 병렬)
+          const compParts = await Promise.all(toFetch.map(async (amend) => {
             const idx = mstToIdx.get(amend.mst)
             const prevMst = idx != null ? allVersions[idx + 1]?.mst : undefined
             const isNew = amend.changeReason.includes("신설") || !prevMst
-            const beforeText = isNew ? "(신설)" : await getContent(prevMst!)
-
+            const [afterText, beforeText] = await Promise.all([
+              getContent(amend.mst),
+              isNew ? Promise.resolve("(신설)") : getContent(prevMst!),
+            ])
             const header = `▸ ${amend.promDate} ${amend.changeType} (MST: ${amend.mst})`
             const reasonLine = amend.changeReason ? `변경사유: ${amend.changeReason}\n` : ""
-            compParts.push(
-              `${header}\n${reasonLine}\n[개정 전]\n${beforeText}\n\n[개정 후]\n${afterText}`
-            )
-          }
+            return `${header}\n${reasonLine}\n[개정 전]\n${beforeText}\n\n[개정 후]\n${afterText}`
+          }))
           if (compParts.length > 0) {
             parts.push(sec("조문 내용 연혁 (개정 전후 대조)", compParts.join("\n\n---\n\n")))
           }
@@ -1069,9 +1077,14 @@ export async function chainArticleHistory(
         const toFetch = amendments.slice(0, input.maxAmendments ?? 5)
 
         if (toFetch.length > 0) {
+          // 전체 신구대조표를 병렬 조회
+          const comparisons = await Promise.all(
+            toFetch.map(amend => callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey }))
+          )
           const compParts: string[] = []
-          for (const amend of toFetch) {
-            const oldNew = await callTool(compareOldNew, apiClient, { mst: amend.mst, apiKey: input.apiKey })
+          for (let i = 0; i < toFetch.length; i++) {
+            const oldNew = comparisons[i]
+            const amend = toFetch[i]
             if (!oldNew.isError && oldNew.text.trim()) {
               compParts.push(`▸ ${amend.promDate} ${amend.changeType} (MST: ${amend.mst})\n${oldNew.text}`)
             }

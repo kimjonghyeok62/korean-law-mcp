@@ -8,6 +8,20 @@
 import { SEARCH_DETAIL_CHAINS } from "./tool-chain-config.js"
 import { parseDateRange, type DateRange } from "./date-parser.js"
 
+// ────────────────────────────────────────
+// 패스트트랙: 날짜 키워드 감지 + 단순 조문 조회
+// ────────────────────────────────────────
+
+/** 시간 표현 포함 여부 — true일 때만 parseDateRange 실행 */
+const HAS_TIME_KW = /최근|이후|이전|부터|까지|\d{4}년|\d{1,2}월|지난\s*\d|주\s*전|일\s*전|일\s*후/
+
+/**
+ * 패스트트랙 패턴: "법령명 + 제N조(의M)?" 형태의 가장 흔한 단순 조문 조회.
+ * 이 패턴이 매칭되면 date parsing + 30개 routePattern 전체를 건너뜀.
+ * 예: "민법 제1조", "근로기준법 제36조의2", "국가공무원법 시행규칙 제10조의2"
+ */
+const FAST_ARTICLE_RE = /^([가-힣\s]{2,}(?:법|령|규칙|규정))\s*(제\d+조(?:의\d+)?)$/
+
 export interface RouteResult {
   /** 실행할 도구 이름 */
   tool: string
@@ -618,8 +632,19 @@ export function routeQuery(query: string): RouteResult {
     }
   }
 
-  // 자연어 날짜 조건 추출 (검색어에서 시간 표현 분리)
-  const dateParsed = parseDateRange(q)
+  // 패스트트랙: "법령명 + 제N조" 형태 — date parsing + 30개 패턴 전체 생략
+  const fastMatch = FAST_ARTICLE_RE.exec(q)
+  if (fastMatch) {
+    return {
+      tool: "search_law",
+      params: { query: fastMatch[1].trim() },
+      reason: "패스트트랙: 법령명+조문번호 → search_law → get_law_text",
+      pipeline: [{ tool: "get_law_text", params: { jo: fastMatch[2] } }],
+    }
+  }
+
+  // 자연어 날짜 조건 추출 — 시간 키워드가 있을 때만 17개 regex 실행
+  const dateParsed = HAS_TIME_KW.test(q) ? parseDateRange(q) : { range: undefined, cleanQuery: q }
   const dateRange = dateParsed.range
 
   // 날짜 표현이 제거된 순수 검색어로 패턴 매칭
