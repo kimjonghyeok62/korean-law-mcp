@@ -60,11 +60,13 @@ export async function searchLaw(
       const promDate = law.getElementsByTagName("공포일자")[0]?.textContent || ""
       const lawType = law.getElementsByTagName("법령구분명")[0]?.textContent || ""
 
+      const lawUrl = `https://www.law.go.kr/법령/${encodeURIComponent(lawName)}`
       resultText += `${i + 1}. ${lawName}\n`
       resultText += `   - 법령ID: ${lawId}\n`
       resultText += `   - MST: ${mst}\n`
       resultText += `   - 공포일: ${promDate}\n`
-      resultText += `   - 구분: ${lawType}\n\n`
+      resultText += `   - 구분: ${lawType}\n`
+      resultText += `   - 링크: [법제처 바로가기](${lawUrl})\n\n`
     }
 
     // 후속 도구 안내 제거 (LLM이 이미 도구 목록을 알고 있음)

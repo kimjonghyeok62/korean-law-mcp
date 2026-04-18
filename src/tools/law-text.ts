@@ -297,6 +297,20 @@ export async function getLawText(
       resultText += `\n여러 조문 일괄 조회: get_batch_articles 도구 사용`
     }
 
+    // 법제처 바로가기 링크 추가
+    if (lawName && lawName !== "알 수 없음") {
+      const displayJo = input.jo ? normalizeJo(input.jo) : undefined
+      resultText += `\n\n---\n**법제처 바로가기**\n`
+      if (displayJo) {
+        resultText += `- [${lawName} ${displayJo}](https://www.law.go.kr/법령/${encodeURIComponent(lawName)}/${encodeURIComponent(displayJo)})\n`
+      } else {
+        resultText += `- [${lawName}](https://www.law.go.kr/법령/${encodeURIComponent(lawName)})\n`
+      }
+      if (resolvedMst) {
+        resultText += `- [연혁 보기](https://www.law.go.kr/LSW/lsStmdInfoP.do?lsiSeq=${resolvedMst})\n`
+      }
+    }
+
     // Cache the result
     lawCache.set(cacheKey, resultText)
 
