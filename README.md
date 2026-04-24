@@ -1,14 +1,3 @@
----
-title: Korean Law MCP
-emoji: ⚖️
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-pinned: false
-license: mit
-short_description: 법제처 41개 API → 15개 MCP 도구. 법령·판례·조례·조약 AI 검색
----
-
 # Korean Law MCP
 
 **법제처 41개 API를 15개 도구로.** 법령, 판례, 행정규칙, 자치법규, 조약, 해석례를 AI 어시스턴트나 터미널에서 바로 사용.
